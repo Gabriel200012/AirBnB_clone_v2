@@ -1,42 +1,68 @@
-# deploy static
-$whisper_dirs = [ '/data/', '/data/web_static/',
-                        '/data/web_static/releases/', '/data/web_static/shared/',
-                        '/data/web_static/releases/test/'
-                  ]
+# Prepare web server for deployment
 
-package {'nginx':
-  ensure  => installed,
+exec {'update':
+  provider => shell,
+  command  => 'sudo apt-get -y update',
+  before   => Exec['install nginx'],
 }
 
-file { $whisper_dirs:
-        ensure  => 'directory',
-        owner   => 'ubuntu',
-        group   => 'ubuntu',
-        recurse => 'remote',
-        mode    => '0777',
-}
-file { '/data/web_static/current':
-  ensure => link,
-  target => '/data/web_static/releases/test/',
-}
-file {'/data/web_static/releases/test/index.html':
-  ensure  => present,
-  content => 'Holberton School for the win!',
+exec {'install nginx':
+  provider => shell,
+  command  => 'sudo apt-get -y install nginx',
+  before   => Exec['start nginx'],
 }
 
-exec { 'chown -R ubuntu:ubuntu /data/':
-  path => '/usr/bin/:/usr/local/bin/:/bin/'
+exec {'start nginx':
+  provider => shell,
+  command  => 'sudo service nginx start',
+  before   => Exec['create test directory'],
 }
 
-file_line {'deploy static':
-  path  => '/etc/nginx/sites-available/default',
-  after => 'server_name _;',
-  line  => "\n\tlocation /hbnb_static {\n\t\talias /data/web_static/current/;\n\t}",
+exec {'create shared directory':
+  provider => shell,
+  command  => 'sudo mkdir -p /data/web_static/shared/',
+  before   => Exec['create test directory'],
 }
 
-service {'nginx':
-  ensure  => running,
+exec {'create test directory':
+  provider => shell,
+  command  => 'sudo mkdir -p /data/web_static/releases/test/',
+  before   => Exec['add test content'],
 }
 
-exec {'/etc/init.d/nginx restart':
+exec {'add test content':
+  provider => shell,
+  command  => 'echo "<html>
+    <head>
+    </head>
+    <body>
+      Holberton School
+    </body>
+  </html>" > /data/web_static/releases/test/index.html',
+  before   => Exec['create symbolic link to current'],
+}
+
+exec {'create symbolic link to current':
+  provider => shell,
+  command  => 'sudo ln -sf /data/web_static/releases/test/ /data/web_static/current',
+  before   => File['/data/'],
+}
+
+file {'/data/':
+  ensure  => directory,
+  owner   => 'ubuntu',
+  group   => 'ubuntu',
+  recurse => true,
+  before  => Exec['serve current to hbnb_static'],
+}
+
+exec {'serve current to hbnb_static':
+  provider => shell,
+  command  => 'sed -i "61i\ \n\tlocation /hbnb_static {\n\t\talias /data/web_static/current;\n\t\tautoindex off;\n\t}" /etc/nginx/sites-available/default',
+  before   => Exec['restart nginx'],
+}
+
+exec {'restart nginx':
+  provider => shell,
+  command  => 'sudo service nginx restart',
 }
